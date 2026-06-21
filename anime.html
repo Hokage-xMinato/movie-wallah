@@ -350,8 +350,7 @@
   id="search-input"
   class="search-input"
   placeholder="Search anime..."
-  name="anime_query"
-  autocomplete="new-password"
+  autocomplete="off"
   autocorrect="off"
   autocapitalize="off"
   spellcheck="false"
@@ -742,6 +741,22 @@
                 }
             },
 
+            // Fires whenever fullscreen state changes (any vendor-prefixed event) - keeps
+            // orientation lock in sync regardless of which fullscreen API path was used.
+            handleFullscreenChange: function() {
+                const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+                if (isFullscreen) {
+                    if (screen.orientation && screen.orientation.lock) {
+                        // Best effort: not supported on iOS Safari, fails silently there.
+                        screen.orientation.lock('landscape').catch(() => {});
+                    }
+                } else {
+                    if (screen.orientation && screen.orientation.unlock) {
+                        screen.orientation.unlock();
+                    }
+                }
+            },
+
             saveProgress: function() {
                 const title = this.currentAnime.title.english || this.currentAnime.title.romaji;
                 this.watchHistory[this.currentAnime.id] = {
@@ -792,6 +807,11 @@
 
         // Close dropdowns when clicking anywhere outside
         document.addEventListener('click', () => app.closeAllDropdowns());
+
+        // Keep landscape lock in sync with fullscreen state across browser vendors
+        ['fullscreenchange', 'webkitfullscreenchange', 'msfullscreenchange'].forEach(evt => {
+            document.addEventListener(evt, () => app.handleFullscreenChange());
+        });
 
         // Handle browser back/forward
         window.addEventListener('popstate', () => app.loadFromURL());
