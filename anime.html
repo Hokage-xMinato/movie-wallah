@@ -365,7 +365,7 @@
             <h2 id="watch-title" style="text-align: center; font-size: 1.1rem;"></h2>
             
             <div class="video-container">
-                <iframe id="video-player" allowfullscreen></iframe>
+                <iframe id="video-player" frameBorder="0" scrolling="no" allowFullScreen></iframe>
             </div>
 
             <div class="controls-bar">
@@ -565,7 +565,7 @@
 
             loadIframe: function() {
                 const iframe = document.getElementById('video-player');
-                const url = `https://vidnest.fun/animepahe/${this.currentAnime.id}/${this.currentEpisode}/${this.currentFormat}?pip=off`;
+                const url = `https://vidnest.fun/animepahe/${this.currentAnime.id}/${this.currentEpisode}/${this.currentFormat}`;
                 iframe.src = url;
                 
                 document.getElementById('selected-ep-text').innerText = `Episode ${this.currentEpisode}`;
