@@ -565,7 +565,7 @@
 
             loadIframe: function() {
                 const iframe = document.getElementById('video-player');
-                const url = `https://vidnest.fun/animepahe/${this.currentAnime.id}/${this.currentEpisode}/${this.currentFormat}`;
+                const url = `https://vidnest.fun/animepahe/${this.currentAnime.id}/${this.currentEpisode}/${this.currentFormat}?pip=hide`;
                 iframe.src = url;
                 
                 document.getElementById('selected-ep-text').innerText = `Episode ${this.currentEpisode}`;
