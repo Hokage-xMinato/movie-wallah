@@ -265,6 +265,19 @@
 
         .video-container iframe { width: 100%; height: 100%; border: none; }
 
+        .video-container iframe:fullscreen,
+        .video-container iframe:-webkit-full-screen {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #fullscreen-btn {
+            background: var(--surface-color);
+            border: 1px solid #333;
+        }
+
+        #fullscreen-btn:hover { background: #222; }
+
         .controls-bar {
             display: flex;
             flex-wrap: wrap;
@@ -394,6 +407,7 @@
                             <div class="dropdown-option" onclick="app.changeFormat('dub')">Dub</div>
                         </div>
                     </div>
+                    <button class="btn" id="fullscreen-btn" onclick="app.toggleFullscreen()" title="Fullscreen">⛶ Fullscreen</button>
                 </div>
             </div>
         </div>
@@ -405,13 +419,115 @@
             currentEpisode: 1,
             currentFormat: 'sub',
             watchHistory: JSON.parse(localStorage.getItem('animesfan_history')) || {},
+            suppressUrlUpdate: false, // true while restoring state from a URL, to avoid re-pushing it
 
-            // Navigation
-            navigate: function(viewId) {
+            // --- View switching (DOM only, no URL changes) ---
+            switchView: function(viewId) {
                 document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
                 document.getElementById(viewId).classList.add('active');
                 if(viewId === 'home') this.renderHome();
                 window.scrollTo(0, 0);
+            },
+
+            // Used directly by header/logo clicks - switches view AND updates the URL
+            navigate: function(viewId) {
+                this.switchView(viewId);
+                if (viewId === 'home') {
+                    this.updateURL({}, true);
+                } else if (viewId === 'search') {
+                    this.updateURL({ view: 'search' }, true);
+                }
+            },
+
+            // --- URL / query param routing ---
+            // Writes the current app state into the URL so it can be shared and survives back/forward.
+            updateURL: function(params, push) {
+                if (this.suppressUrlUpdate) return;
+                const qs = new URLSearchParams();
+                Object.keys(params).forEach(key => {
+                    const val = params[key];
+                    if (val !== undefined && val !== null && val !== '') qs.set(key, val);
+                });
+                const queryString = qs.toString();
+                const newUrl = queryString ? `${location.pathname}?${queryString}` : location.pathname;
+                if (push) {
+                    history.pushState({ params }, '', newUrl);
+                } else {
+                    history.replaceState({ params }, '', newUrl);
+                }
+            },
+
+            // Reads the URL and rebuilds whatever state/view it describes.
+            // Called on first load and whenever the user navigates back/forward.
+            loadFromURL: async function() {
+                this.suppressUrlUpdate = true;
+                const params = new URLSearchParams(location.search);
+                const view = params.get('view') || 'home';
+                const id = params.get('id');
+                const ep = parseInt(params.get('ep')) || 1;
+                const format = params.get('format') || 'sub';
+                const q = params.get('q') || '';
+
+                try {
+                    if (view === 'search') {
+                        this.switchView('search');
+                        document.getElementById('search-input').value = q;
+                        if (q) await this.searchAnime(false);
+                    } else if (view === 'details' && id) {
+                        const anime = await this.getAnimeData(id);
+                        if (anime) {
+                            this.showDetailsData(anime);
+                            this.switchView('details');
+                        } else {
+                            this.switchView('home');
+                        }
+                    } else if (view === 'watch' && id) {
+                        const anime = await this.getAnimeData(id);
+                        if (anime) {
+                            this.currentAnime = anime;
+                            this.currentEpisode = ep;
+                            this.currentFormat = format;
+                            this.setupWatchEnvironment();
+                            this.switchView('watch');
+                        } else {
+                            this.switchView('home');
+                        }
+                    } else {
+                        this.switchView('home');
+                    }
+                } finally {
+                    this.suppressUrlUpdate = false;
+                }
+            },
+
+            // Gets full anime data for an id - from local watch history if we have it, otherwise from AniList.
+            getAnimeData: async function(id) {
+                if (this.watchHistory[id]) return this.watchHistory[id].fullData;
+                return await this.fetchAnimeById(id);
+            },
+
+            fetchAnimeById: async function(id) {
+                const graphqlQuery = `
+                query ($id: Int) {
+                    Media(id: $id, type: ANIME) {
+                        id
+                        title { romaji english }
+                        coverImage { large }
+                        description(asHtml: false)
+                        episodes
+                    }
+                }`;
+                try {
+                    const response = await fetch('https://graphql.anilist.co', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ query: graphqlQuery, variables: { id: parseInt(id) } })
+                    });
+                    const data = await response.json();
+                    return data.data.Media;
+                } catch (error) {
+                    return null;
+                }
             },
 
             // Home Render
@@ -445,7 +561,7 @@
             },
 
             // Search AniList API
-            searchAnime: async function() {
+            searchAnime: async function(pushUrl = true) {
                 const query = document.getElementById('search-input').value;
                 if(!query) return;
 
@@ -478,6 +594,7 @@
                     const data = await response.json();
                     loader.style.display = 'none';
                     this.renderSearchResults(data.data.Page.media);
+                    if (pushUrl) this.updateURL({ view: 'search', q: query }, true);
                 } catch (error) {
                     loader.style.display = 'none';
                     grid.innerHTML = '<p class="empty-state">Failed to load. Check your connection.</p>';
@@ -503,6 +620,12 @@
 
             // Details View
             showDetails: function(anime) {
+                this.showDetailsData(anime);
+                this.switchView('details');
+                this.updateURL({ view: 'details', id: anime.id }, true);
+            },
+
+            showDetailsData: function(anime) {
                 this.currentAnime = anime;
                 const title = anime.title.english || anime.title.romaji;
                 
@@ -512,8 +635,6 @@
                 let desc = anime.description ? anime.description.replace(/<[^>]*>?/gm, '') : 'No description available.';
                 document.getElementById('detail-desc').innerText = desc;
                 document.getElementById('detail-eps').innerText = anime.episodes || 'Ongoing';
-                
-                this.navigate('details');
             },
 
             // Watch Logic
@@ -523,7 +644,8 @@
                 this.currentFormat = history ? history.format : 'sub';
                 
                 this.setupWatchEnvironment();
-                this.navigate('watch');
+                this.switchView('watch');
+                this.updateURL({ view: 'watch', id: this.currentAnime.id, ep: this.currentEpisode, format: this.currentFormat }, true);
             },
 
             resumeAnime: function(historyData) {
@@ -532,7 +654,8 @@
                 this.currentFormat = historyData.format;
                 
                 this.setupWatchEnvironment();
-                this.navigate('watch');
+                this.switchView('watch');
+                this.updateURL({ view: 'watch', id: this.currentAnime.id, ep: this.currentEpisode, format: this.currentFormat }, true);
             },
 
             setupWatchEnvironment: function() {
@@ -584,12 +707,14 @@
                 if(newEp > 0 && (newEp <= (this.currentAnime.episodes || Infinity))) {
                     this.currentEpisode = newEp;
                     this.setupWatchEnvironment(); 
+                    this.updateURL({ view: 'watch', id: this.currentAnime.id, ep: this.currentEpisode, format: this.currentFormat }, false);
                 }
             },
 
             jumpEpisode: function(epNum) {
                 this.currentEpisode = parseInt(epNum);
                 this.loadIframe();
+                this.updateURL({ view: 'watch', id: this.currentAnime.id, ep: this.currentEpisode, format: this.currentFormat }, false);
             },
 
             changeFormat: function(format) {
@@ -597,6 +722,24 @@
                 document.getElementById('selected-format-text').innerText = format;
                 this.closeAllDropdowns();
                 this.loadIframe();
+                this.updateURL({ view: 'watch', id: this.currentAnime.id, ep: this.currentEpisode, format: this.currentFormat }, false);
+            },
+
+            // Fullscreen Logic - expands the video iframe itself to fill the screen
+            toggleFullscreen: function() {
+                const iframe = document.getElementById('video-player');
+                const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+
+                if (!isFullscreen) {
+                    if (iframe.requestFullscreen) iframe.requestFullscreen();
+                    else if (iframe.webkitRequestFullscreen) iframe.webkitRequestFullscreen();
+                    else if (iframe.webkitEnterFullscreen) iframe.webkitEnterFullscreen(); // iOS Safari fallback
+                    else if (iframe.msRequestFullscreen) iframe.msRequestFullscreen();
+                } else {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                    else if (document.msExitFullscreen) document.msExitFullscreen();
+                }
             },
 
             saveProgress: function() {
@@ -650,8 +793,11 @@
         // Close dropdowns when clicking anywhere outside
         document.addEventListener('click', () => app.closeAllDropdowns());
 
-        // Initialize
-        app.renderHome();
+        // Handle browser back/forward
+        window.addEventListener('popstate', () => app.loadFromURL());
+
+        // Initialize - restores whatever view/anime/episode the URL points to
+        app.loadFromURL();
     </script>
 </body>
 </html>
