@@ -28,7 +28,7 @@
             background-color: var(--bg-color);
             color: var(--text-main);
             overflow-x: hidden;
-            font-size: 14px; /* Reduced base font size */
+            font-size: 14px;
         }
 
         /* Header */
@@ -90,11 +90,12 @@
         h1 { font-size: 1.5rem; margin-bottom: 1rem; }
         h2 { font-size: 1.2rem; margin-bottom: 1.2rem; color: #ddd; }
 
-        /* Anime Grid - Smaller Cards */
+        /* Anime Grid */
         .anime-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); /* Scaled down from 160px */
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
             gap: 1rem;
+            align-items: start; /* Ensures cards don't stretch artificially if titles vary in length */
         }
 
         @media (min-width: 768px) {
@@ -108,6 +109,9 @@
             cursor: pointer;
             transition: var(--transition);
             border: 1px solid #222;
+            height: 100%; /* Fill the grid row naturally */
+            display: flex;
+            flex-direction: column;
         }
 
         .anime-card:hover {
@@ -118,24 +122,29 @@
 
         .anime-card img {
             width: 100%;
-            height: 180px; /* Reduced image height */
+            height: 180px;
             object-fit: cover;
         }
 
-        .anime-info { padding: 0.6rem; }
+        .anime-info { 
+            padding: 0.6rem; 
+            flex-grow: 1; 
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
 
         .anime-title {
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             font-weight: 600;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            line-height: 1.3;
+            word-wrap: break-word; /* Allows full title to wrap naturally */
         }
 
         .anime-ep {
             font-size: 0.75rem;
             color: var(--primary-color);
-            margin-top: 0.3rem;
+            margin-top: 0.5rem;
         }
 
         /* Search Bar */
@@ -203,7 +212,6 @@
 
         .dropdown-options {
             position: absolute;
-            bottom: 110%; /* Open upwards to avoid screen cutoffs on mobile */
             left: 0;
             right: 0;
             background: #1a1a1a;
@@ -213,6 +221,16 @@
             overflow-y: auto;
             display: none;
             z-index: 100;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+            /* Defaults to dropping DOWN */
+            top: 110%; 
+            bottom: auto;
+        }
+
+        /* Dynamic class added by JS if there's no room below */
+        .dropdown-options.drop-up {
+            top: auto;
+            bottom: 110%;
             box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
         }
 
@@ -230,7 +248,7 @@
         .dropdown-option:hover { background: rgba(229, 9, 20, 0.2); color: var(--primary-color); }
         .dropdown-option.active { background: var(--primary-color); color: white; }
 
-        /* Scrollbar styling for custom dropdown */
+        /* Scrollbar styling */
         .dropdown-options::-webkit-scrollbar { width: 5px; }
         .dropdown-options::-webkit-scrollbar-track { background: #111; }
         .dropdown-options::-webkit-scrollbar-thumb { background: #444; border-radius: 10px; }
@@ -314,7 +332,7 @@
 
         <div id="search" class="view">
             <div class="search-container">
-                <input type="text" id="search-input" class="search-input" placeholder="Search anime..." onkeypress="if(event.key === 'Enter') app.searchAnime()">
+                <input type="text" id="search-input" class="search-input" placeholder="Search anime..." autocomplete="off" spellcheck="false" onkeypress="if(event.key === 'Enter') app.searchAnime()">
                 <button class="btn" onclick="app.searchAnime()">Search</button>
             </div>
             <div id="loader" class="loader">Fetching results...</div>
@@ -334,7 +352,7 @@
         </div>
 
         <div id="watch" class="view">
-            <h2 id="watch-title" style="text-align: center; font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></h2>
+            <h2 id="watch-title" style="text-align: center; font-size: 1.1rem;"></h2>
             
             <div class="video-container">
                 <iframe id="video-player" allowfullscreen></iframe>
@@ -347,7 +365,7 @@
                     <div class="custom-dropdown" id="ep-dropdown-container">
                         <div class="dropdown-selected" onclick="app.toggleDropdown('ep-options', event)">
                             <span id="selected-ep-text">Episode 1</span>
-                            <span style="font-size: 0.7rem; margin-left: 8px;">▲</span>
+                            <span style="font-size: 0.7rem; margin-left: 8px;">▼</span>
                         </div>
                         <div class="dropdown-options" id="ep-options"></div>
                     </div>
@@ -359,7 +377,7 @@
                     <div class="custom-dropdown" style="min-width: 80px;">
                         <div class="dropdown-selected" onclick="app.toggleDropdown('format-options', event)">
                             <span id="selected-format-text" style="text-transform: capitalize;">Sub</span>
-                            <span style="font-size: 0.7rem; margin-left: 8px;">▲</span>
+                            <span style="font-size: 0.7rem; margin-left: 8px;">▼</span>
                         </div>
                         <div class="dropdown-options" id="format-options">
                             <div class="dropdown-option" onclick="app.changeFormat('sub')">Sub</div>
@@ -584,14 +602,28 @@
                 localStorage.setItem('animesfan_history', JSON.stringify(this.watchHistory));
             },
 
-            // Custom UI Logic
+            // Smart Toggle Logic for Dropdowns
             toggleDropdown: function(id, event) {
                 event.stopPropagation();
                 const dropdown = document.getElementById(id);
                 const isShowing = dropdown.classList.contains('show');
                 this.closeAllDropdowns();
+                
                 if(!isShowing) {
+                    // Check available space dynamically
+                    const triggerRect = event.currentTarget.getBoundingClientRect();
+                    const spaceBelow = window.innerHeight - triggerRect.bottom;
+                    const requiredSpace = 260; // Approximate max height of dropdown window
+                    
+                    // If space below is too small, apply the drop-up class
+                    if (spaceBelow < requiredSpace) {
+                        dropdown.classList.add('drop-up');
+                    } else {
+                        dropdown.classList.remove('drop-up');
+                    }
+
                     dropdown.classList.add('show');
+                    
                     // Scroll active item into view
                     const activeItem = dropdown.querySelector('.active');
                     if (activeItem) {
