@@ -332,7 +332,16 @@
 
         <div id="search" class="view">
             <div class="search-container">
-                <input type="text" id="search-input" class="search-input" placeholder="Search anime..." autocomplete="off" spellcheck="false" onkeypress="if(event.key === 'Enter') app.searchAnime()">
+               <input 
+  type="text" 
+  id="search-input" 
+  class="search-input" 
+  placeholder="Search anime..." 
+  autocomplete="new-password" 
+  autocorrect="off" 
+  autocapitalize="off" 
+  spellcheck="false"
+  onkeypress="if(event.key === 'Enter') app.searchAnime()">
                 <button class="btn" onclick="app.searchAnime()">Search</button>
             </div>
             <div id="loader" class="loader">Fetching results...</div>
